@@ -8,16 +8,19 @@ import com.example.incident_service.exception.ResourceNotFoundException;
 import com.example.incident_service.repository.IncidentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class IncidentServiceImpl implements IncidentService {
 
     private final IncidentRepository incidentRepository;
 
     @Override
+    @Transactional
     public IncidentResponse createIncident(CreateIncidentRequest request) {
         Incident incident = Incident.builder()
                 .title(request.title())
@@ -48,6 +51,7 @@ public class IncidentServiceImpl implements IncidentService {
     }
 
     @Override
+    @Transactional
     public IncidentResponse updateIncidentStatus(Long id, UpdateIncidentStatusRequest request) {
         Incident incident = incidentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Incident not found with id: " + id));
