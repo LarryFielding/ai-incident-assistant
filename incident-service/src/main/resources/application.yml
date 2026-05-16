@@ -1,0 +1,19 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/incidentdb
+    username: incident_user
+    password: incident_pass
+
+  jpa:
+    hibernate:
+      ddl-auto: update # Automatically updates database schema based on your @Entity classes
+    show-sql: true     # Prints SQL queries to the console
+    properties:
+      hibernate:
+        format_sql: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
