@@ -6,12 +6,16 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update # Automatically updates database schema based on your @Entity classes
+      ddl-auto: validate # Changing from 'update' to 'validate' for professional enviroments
     show-sql: true     # Prints SQL queries to the console
     properties:
       hibernate:
         format_sql: true
 
+  # We explicitly activate Flyway (Spring Boot auto-configures it):
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
 management:
   endpoints:
     web:
