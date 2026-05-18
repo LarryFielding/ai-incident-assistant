@@ -4,6 +4,10 @@ spring:
     username: incident_user
     password: incident_pass
 
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
   jpa:
     hibernate:
       ddl-auto: validate # Changing from 'update' to 'validate' for professional enviroments
@@ -12,10 +16,6 @@ spring:
       hibernate:
         format_sql: true
 
-  # We explicitly activate Flyway (Spring Boot auto-configures it):
-  flyway:
-    enabled: true
-    baseline-on-migrate: true
 management:
   endpoints:
     web:
