@@ -37,9 +37,12 @@ The project is intentionally designed as a portfolio-quality backend application
           - Incident CRUD
           - Business logic
           - Persistence
-          - AI orchestration
+          - Publishes/Subscribes to Kafka
                 |
-                v
+                v (Events)
+           [Apache Kafka]
+                |
+                v (Events)
          [Python AI Service]
           - Prompt handling
           - LLM integration
@@ -61,11 +64,15 @@ The project is intentionally designed as a portfolio-quality backend application
 - Spring Data JPA
 - PostgreSQL
 - Maven
+- Flyway (for migrations)
+- Testcontainers (for integration testing)
 
 ## AI Service
 
 - Python
 - FastAPI
+- LangChain / Instructor (planned)
+- Pydantic v2 (planned)
 
 ## Infrastructure
 
@@ -252,8 +259,9 @@ PostgreSQL via Docker Compose.
 
 Initial development configuration:
 
-- Hibernate auto-update schema
+- Flyway for managing database migrations (ddl-auto is set to validate)
 - Local PostgreSQL container
+- Testcontainers for robust data layer integration testing
 
 ---
 
@@ -382,33 +390,28 @@ Important architectural decision:
 - Use an external LLM API.
 - Python service handles:
   - prompt construction,
-  - response validation,
-  - structured JSON output.
+  - response validation using Pydantic v2 to strictly match expected JSON structures,
+  - structured JSON output using libraries like LangChain or Instructor.
 
 ---
 
-# PHASE 3 - Java ↔ Python Integration
+# PHASE 3 - Java ↔ Python Integration (Event-Driven)
 
 ## Goal
 
-Allow Spring Boot to orchestrate AI analysis.
+Allow Spring Boot to orchestrate AI analysis without synchronous blocking calls.
 
 ---
 
 ## Planned Features
 
-### New Endpoint
-
-```text
-POST /api/incidents/{id}/analyze
-```
-
-### Flow
+### Flow (Event-Driven via Kafka)
 
 1. Read incident from PostgreSQL
-2. Call Python AI service
-3. Receive structured analysis
-4. Persist analysis result
+2. Publish `incident.created` event to Kafka
+3. Python AI service consumes event and performs LLM analysis
+4. Python AI service publishes `incident.analyzed` event back to Kafka
+5. Java service consumes analysis result and updates database
 
 ---
 
@@ -442,6 +445,7 @@ Containerize the entire system.
 - incident-service
 - ai-service
 - postgres
+- kafka
 
 ---
 
@@ -453,13 +457,13 @@ Containerize the entire system.
 
 ---
 
-# PHASE 5 - Kafka Event Streaming
+# PHASE 5 - Kafka Event Streaming (Advanced)
 
 ## Goal
 
-Introduce asynchronous event-driven communication into the platform.
+Introduce and reinforce asynchronous event-driven communication into the platform.
 
-This phase exists both to improve architecture realism and to practice distributed systems concepts commonly used in enterprise backend development.
+This phase exists both to improve architecture realism and to practice distributed systems concepts commonly used in enterprise backend development. Since the core flow is moved to Phase 3, this phase focuses on robustness.
 
 ---
 
@@ -546,7 +550,8 @@ Improve the project to look more production-ready.
 - cleaner DTO separation
 - sorting/filtering
 - centralized configuration
-- request tracing
+- request tracing (Distributed Tracing using OpenTelemetry or Spring Cloud Sleuth / Micrometer Tracing)
+- metrics via spring-boot-starter-actuator, Prometheus, and Grafana
 
 ---
 
@@ -618,4 +623,3 @@ This project is intended to strengthen skills in:
 - distributed systems fundamentals
 
 The project prioritizes understanding and architecture quality over rapid code generation.
-
