@@ -45,3 +45,21 @@ To run the service in a development environment, use the following command:
 ```shell
 fastapi dev app/main.py
 ```
+
+## Testing with Swagger UI
+
+Once the server is running, you can access the interactive API documentation at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+
+To test the `POST /analyze-incident` endpoint, use the following JSON payload:
+
+```json
+{
+  "title": "Database timeout in payment service",
+  "description": "Users report intermittent failures during checkout and payments are not being completed correctly.",
+  "raw_logs": "java.sql.SQLTimeoutException: query timed out",
+  "service_name": "payment-service",
+  "environment": "PROD",
+  "environment_name": "payments-prod-us-east-1",
+  "incident_occurred_at": "2026-05-28T03:15:00Z"
+}
+```
