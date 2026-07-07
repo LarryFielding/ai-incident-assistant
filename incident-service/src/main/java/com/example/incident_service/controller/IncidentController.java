@@ -7,9 +7,11 @@ import com.example.incident_service.service.IncidentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import java.net.URI;
 import java.util.List;
 
 @RestController
@@ -21,10 +23,15 @@ public class IncidentController {
     private final IncidentService incidentService;
 
     @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public IncidentResponse createIncident(@Valid @RequestBody CreateIncidentRequest request) {
+    public ResponseEntity<Void> createIncident(@Valid @RequestBody CreateIncidentRequest request) {
         log.info("Received request to create incident: {}", request.title());
-        return incidentService.createIncident(request);
+        IncidentResponse newIncident = incidentService.createIncident(request);
+        URI location = ServletUriComponentsBuilder
+                .fromCurrentRequest()
+                .path("/{id}")
+                .buildAndExpand(newIncident.id())
+                .toUri();
+        return ResponseEntity.created(location).build();
     }
 
     @GetMapping
