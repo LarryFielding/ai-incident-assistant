@@ -35,21 +35,21 @@ public class IncidentController {
     }
 
     @GetMapping
-    public List<IncidentResponse> getAllIncidents() {
-        return incidentService.getAllIncidents();
+    public ResponseEntity<List<IncidentResponse>> getAllIncidents() {
+        return ResponseEntity.ok(incidentService.getAllIncidents());
     }
 
     @GetMapping("/{id}")
-    public IncidentResponse getIncidentById(@PathVariable Long id) {
-        return incidentService.getIncidentById(id);
+    public ResponseEntity<IncidentResponse> getIncidentById(@PathVariable Long id) {
+        return ResponseEntity.ok(incidentService.getIncidentById(id));
     }
 
     @PatchMapping("/{id}/status")
-    public IncidentResponse updateIncidentStatus(
+    public ResponseEntity<IncidentResponse> updateIncidentStatus(
             @PathVariable Long id,
             @Valid @RequestBody UpdateIncidentStatusRequest request
     ) {
         log.info("Received request to update status for incident ID {}: {}", id, request);
-        return incidentService.updateIncidentStatus(id, request);
+        return ResponseEntity.ok(incidentService.updateIncidentStatus(id, request));
     }
 }
