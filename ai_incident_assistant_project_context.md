@@ -137,29 +137,7 @@ main
 
 ---
 
-# IDE / Tooling Decisions
 
-## Main IDE
-
-Current preferred IDE:
-
-- IntelliJ IDEA
-
-## AI Coding Assistant
-
-Codex is available in VS Code, but the project is intentionally being developed manually to reinforce Spring Boot learning.
-
-Current strategy:
-
-- write core Spring code manually,
-- use AI mostly for:
-  - review,
-  - explanations,
-  - testing suggestions,
-  - troubleshooting,
-  - productivity support.
-
----
 
 # Package Structure
 
@@ -267,16 +245,6 @@ Initial development configuration:
 
 ## Notes Learned During Phase 1
 
-### Git / GitHub
-
-- Initialized repository manually
-- Practiced:
-  - git init
-  - git add
-  - git commit
-  - git push
-  - remote setup
-
 ### Maven Wrapper
 
 Use:
@@ -289,34 +257,6 @@ instead of:
 
 ```powershell
 mvn spring-boot:run
-```
-
-### IntelliJ
-
-Correct Maven/Spring structure:
-
-```text
-src/main/java
-```
-
-NOT:
-
-```text
-src/com/example
-```
-
-### Spring Boot 3
-
-Use:
-
-```java
-jakarta.persistence.*
-```
-
-NOT:
-
-```java
-javax.persistence.*
 ```
 
 ### Tests
