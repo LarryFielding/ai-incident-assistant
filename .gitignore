@@ -46,3 +46,8 @@ Thumbs.db
 # .mvn/
 # mvnw
 # mvnw.cmd
+
+# Python
+.venv/
+__pycache__/
+*.pyc

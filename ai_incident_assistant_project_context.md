@@ -298,10 +298,12 @@ POST /analyze-incident
 ```json
 {
   "title": "Database timeout in payment service",
-  "description": "Users report intermittent failures...",
-  "raw_logs": "stack trace here",
+  "description": "Users report intermittent failures during checkout",
+  "raw_logs": "java.sql.SQLTimeoutException: query timed out",
   "service_name": "payment-service",
-  "environment": "prod"
+  "environment": "PROD",
+  "environment_name": "payments-prod-us-east-1",
+  "incident_occurred_at": "2026-05-28T03:15:00Z"
 }
 ```
 
@@ -311,12 +313,16 @@ POST /analyze-incident
 
 ```json
 {
-  "summary": "...",
+  "summary": "The payment service experienced intermittent database timeouts during checkout.",
   "severity": "HIGH",
   "category": "DATABASE",
-  "possible_root_cause": "...",
-  "suggested_actions": [],
-  "postmortem_draft": "..."
+  "possible_root_cause": "The database connection pool may have been saturated or queries may have exceeded timeout thresholds.",
+  "suggested_actions": [
+    "Check database connection pool metrics.",
+    "Review slow query logs during the incident window.",
+    "Verify whether recent deployments changed database access patterns."
+  ],
+  "postmortem_draft": "During the incident window, users experienced intermittent checkout failures caused by database timeouts in the payment service..."
 }
 ```
 
