@@ -1,0 +1,426 @@
+AI Incident Assistant — Phase 2 Handoff
+======================================
+
+Purpose of this file
+--------------------
+This document summarizes the work completed in Phase 2 so far for the AI Incident Assistant project, specifically the Python/FastAPI AI service. It is intended to be used as context for continuing the work in a new ChatGPT conversation.
+
+Important working style for the next chat
+-----------------------------------------
+This is a learning project whose goal is to help the developer transition toward modern backend development.
+
+The work should continue in small, clear iterations. Do not generate large amounts of code all at once unless explicitly requested. Explain what each step means, especially because the developer is new to Python frameworks and FastAPI.
+
+At the end of each relevant response, show an updated checklist of the phase progress using checkmarks, so it is easy to know where the project currently stands and what the next step is.
+
+Preferred style:
+- Explain concepts slowly and clearly.
+- Relate FastAPI concepts to familiar Spring Boot concepts when useful.
+- Avoid jumping ahead.
+- Prefer one small implementation step at a time.
+- Keep the phase checklist visible and updated.
+- Clarify whether a step is conceptual design, project setup, or actual implementation.
+
+Current Phase
+-------------
+We are working on Phase 2: Python AI Service.
+
+The goal of Phase 2 is to create a lightweight AI microservice responsible for incident analysis.
+
+This service is part of a larger architecture:
+
+Client/Postman/Future Frontend
+        ↓
+Spring Boot incident-service
+        ↓
+Python FastAPI ai-service
+        ↓
+External LLM API, planned
+
+For now, the AI service has been implemented with rule-based mock analysis. The real LLM integration has not been implemented yet.
+
+Completed Work: Phase 2 Steps 0–6
+=================================
+
+0. Designed the AI analysis domain — COMPLETED
+----------------------------------------------
+The request, response, enums, validations, and JSON conventions were designed before implementation.
+
+Final request shape:
+
+{
+  "title": "Database timeout in payment service",
+  "description": "Users report intermittent failures during checkout",
+  "raw_logs": "java.sql.SQLTimeoutException: query timed out",
+  "service_name": "payment-service",
+  "environment": "PROD",
+  "environment_name": "payments-prod-us-east-1",
+  "incident_occurred_at": "2026-05-28T03:15:00Z"
+}
+
+Final response shape:
+
+{
+  "summary": "...",
+  "severity": "HIGH",
+  "category": "DATABASE",
+  "possible_root_cause": "...",
+  "suggested_actions": [],
+  "postmortem_draft": "..."
+}
+
+Important domain decisions:
+- The incident-service reports incidents to the AI service.
+- The AI service is responsible for categorizing the incident.
+- The request should not contain a final incident category.
+- incident_occurred_at was added because the timestamp should exist at incident header level, not only inside raw logs.
+- environment is a controlled enum such as PROD, DEV, QA, STAGING, LOCAL.
+- environment_name is optional and can store the actual deployment/cluster/region name, such as payments-prod-us-east-1.
+
+Enums designed:
+
+Environment:
+- LOCAL
+- DEV
+- QA
+- STAGING
+- PROD
+
+Severity:
+- LOW
+- MEDIUM
+- HIGH
+- CRITICAL
+
+IncidentCategory:
+- DATABASE
+- NETWORK
+- APPLICATION
+- INFRASTRUCTURE
+- SECURITY
+- PERFORMANCE
+- UNKNOWN
+
+Validation rules designed:
+
+Request:
+- title: required, 5–150 chars
+- description: required, 20–4000 chars
+- raw_logs: optional, max 20000 chars
+- service_name: required, 2–100 chars
+- environment: required enum
+- environment_name: optional, max 150 chars
+- incident_occurred_at: required datetime, ISO-8601 preferred
+
+Response:
+- summary: required, 20–1000 chars
+- severity: required enum
+- category: required enum
+- possible_root_cause: required, 10–1500 chars
+- suggested_actions: required, 1–10 items
+- postmortem_draft: required, 50–4000 chars
+
+JSON conventions:
+- Use snake_case for JSON fields.
+- Use uppercase enum values.
+- Use ISO-8601 dates.
+- Optional fields may be null.
+- Use English technical field names.
+
+1. Created ai-service folder — COMPLETED
+----------------------------------------
+The folder ai-service was created inside the repository.
+
+Current intended repository structure:
+
+ai-incident-assistant/
+├── incident-service/
+├── ai-service/
+└── README.md
+
+2. Prepared minimal FastAPI project — COMPLETED
+-----------------------------------------------
+A minimal FastAPI service was created and successfully executed.
+
+The service includes:
+- Python virtual environment using .venv
+- FastAPI installed
+- requirements.txt generated
+- app/main.py created
+- GET /health endpoint created
+- Swagger UI confirmed working
+
+Important note:
+The developer had to add empty __init__.py files to fix this error:
+
+Import error: No module named 'app'
+WARNING Ensure all the package directories have an __init__.py file
+
+This is expected in Python package/module structure. The __init__.py files should remain.
+
+3. Created Pydantic models — COMPLETED
+--------------------------------------
+Pydantic models were created for the request and response contracts.
+
+Files created:
+
+app/models/enums.py
+app/models/requests.py
+app/models/responses.py
+app/models/__init__.py
+
+models/enums.py contains:
+- Environment
+- Severity
+- IncidentCategory
+
+models/requests.py contains:
+- IncidentAnalysisRequest
+
+models/responses.py contains:
+- IncidentAnalysisResponse
+
+Conceptual mapping to Spring Boot:
+- Pydantic models are similar to DTOs plus validation annotations.
+- Enums are similar to Java enums used in DTOs/entities.
+
+4. Created POST /analyze-incident endpoint — COMPLETED
+------------------------------------------------------
+A POST endpoint was created:
+
+POST /analyze-incident
+
+The endpoint receives an IncidentAnalysisRequest and returns an IncidentAnalysisResponse.
+
+FastAPI/Pydantic automatically validates the incoming request body. Invalid requests return HTTP 422.
+
+The endpoint was initially implemented directly in main.py and then later refactored.
+
+5. Tested request/response in Swagger — COMPLETED
+-------------------------------------------------
+Swagger UI was opened successfully at:
+
+http://127.0.0.1:8000/docs
+
+The following endpoints were visible and functional:
+
+GET /health
+POST /analyze-incident
+
+Manual request testing was successful.
+
+6. Added rule-based mock analysis — COMPLETED
+---------------------------------------------
+A mock analyzer was implemented to classify incidents using simple keyword-based rules.
+
+The purpose is both educational and architectural:
+- It teaches request -> service -> response flow.
+- It avoids adding LLM complexity too early.
+- It can later become a fallback if the LLM fails.
+- It can also become a pre-classifier or hint generator for the LLM.
+
+The service logic was moved out of main.py into:
+
+app/services/incident_analysis_service.py
+
+The endpoint now delegates to a service function.
+
+Spring Boot analogy:
+- app/api/routes.py or endpoint function ≈ Controller
+- app/services/incident_analysis_service.py ≈ Service
+- app/models/*.py ≈ DTOs / enums
+
+Rule-based classification examples:
+
+Category rules:
+- database, sql, query, connection pool, timeout -> DATABASE
+- unauthorized, forbidden, jwt, token, authentication -> SECURITY
+- dns, network, connection refused, connection reset -> NETWORK
+- memory, outofmemory, heap, cpu, latency -> PERFORMANCE
+- exception, nullpointer, stack trace, error -> APPLICATION
+- otherwise -> UNKNOWN
+
+Severity rules:
+- PROD + outage/down/unavailable -> CRITICAL
+- PROD + DATABASE/SECURITY/INFRASTRUCTURE -> HIGH
+- PROD general issue -> MEDIUM
+- STAGING or QA -> MEDIUM
+- DEV/LOCAL -> LOW
+
+Manual scenarios tested successfully in Swagger:
+- Database timeout -> DATABASE/HIGH
+- Security/authentication issue -> SECURITY/HIGH
+- Network issue in staging -> NETWORK/MEDIUM
+- Critical production outage -> CRITICAL severity
+
+6.1 Tested multiple manual scenarios in Swagger — COMPLETED
+-----------------------------------------------------------
+Several request bodies were manually tested using Swagger to confirm the rule-based mock analysis changed category/severity according to the input.
+
+6.2 Committed progress — COMPLETED
+----------------------------------
+A commit was made after the rule-based analysis was implemented and tested.
+
+Commit message used:
+
+Add FastAPI AI service with rule-based incident analysis
+
+6.3 Refactored routes using APIRouter — COMPLETED
+-------------------------------------------------
+Endpoints were moved out of main.py into an API routes file using FastAPI APIRouter.
+
+Files/folders added:
+
+app/api/__init__.py
+app/api/routes.py
+
+Current intended structure:
+
+ai-service/
+├── app/
+│   ├── __init__.py
+│   ├── main.py
+│   ├── api/
+│   │   ├── __init__.py
+│   │   └── routes.py
+│   ├── models/
+│   │   ├── __init__.py
+│   │   ├── enums.py
+│   │   ├── requests.py
+│   │   └── responses.py
+│   └── services/
+│       ├── __init__.py
+│       └── incident_analysis_service.py
+├── requirements.txt
+└── .venv/
+
+main.py now creates the FastAPI app and includes the router.
+
+routes.py defines:
+- GET /health
+- POST /analyze-incident
+
+The refactor was tested and everything worked correctly.
+
+Recommended commit after route refactor:
+
+Refactor AI service routes
+
+Current Checklist
+=================
+
+Fase 2 — AI Service
+
+0. Diseñar dominio AI ✅
+1. Crear carpeta ai-service ✅
+2. Preparar proyecto FastAPI mínimo ✅
+3. Crear modelos Pydantic ✅
+4. Crear endpoint POST /analyze-incident ✅
+5. Probar request/response en Swagger ✅
+6. Agregar lógica mock ✅
+6.1 Probar escenarios manuales en Swagger ✅
+6.2 Commit de avance ✅
+6.3 Refactorizar rutas con APIRouter ✅
+7. Agregar LLM real ⬅️ pendiente
+8. Preparar integración futura con Java ⬅️ pendiente
+
+What remains to do
+==================
+
+7. Add real LLM integration — PENDING
+-------------------------------------
+This should not be done all at once. Continue in small steps.
+
+Recommended substeps:
+
+7.1 Create configuration support for environment variables
+- Create app/core/__init__.py
+- Create app/core/config.py
+- Add .env support if needed
+- Store values such as:
+  - OPENAI_API_KEY
+  - LLM_MODEL
+  - USE_LLM
+
+Important:
+- Never hardcode API keys.
+- Do not commit .env.
+- Add .env to .gitignore if not already present.
+
+7.2 Decide provider/library approach
+Recommended for learning:
+- Start simple.
+- Prefer direct OpenAI client + Pydantic validation before adding LangChain.
+
+Possible future libraries:
+- OpenAI SDK directly
+- Instructor for structured outputs
+- LangChain later, if needed
+
+7.3 Split analyzers conceptually
+Recommended architecture:
+
+app/services/
+├── incident_analysis_service.py
+├── rule_based_analyzer.py
+└── llm_analyzer.py
+
+The current rule-based logic can be moved into rule_based_analyzer.py.
+
+Then incident_analysis_service.py can orchestrate:
+
+Try LLM analyzer
+    ↓
+If successful, return LLM response
+    ↓
+If it fails or is disabled, use rule-based fallback
+
+7.4 Implement LLM analyzer
+The LLM analyzer should:
+- Build a prompt from IncidentAnalysisRequest
+- Call the external LLM API
+- Ask for structured JSON output
+- Validate the output against IncidentAnalysisResponse
+- Return IncidentAnalysisResponse
+
+7.5 Add fallback behavior
+If the LLM fails because of timeout, API error, missing API key, rate limit, or invalid JSON:
+- Log or handle the error clearly
+- Return rule-based analysis as fallback
+
+7.6 Test from Swagger
+Use the same manual incident scenarios and compare rule-based vs LLM behavior.
+
+8. Prepare future integration with Java — PENDING
+------------------------------------------------
+This step is not the full Phase 3. It is only preparation.
+
+The next chat should not jump straight into Java integration unless Phase 2 is complete.
+
+Possible preparation tasks:
+- Confirm the final request/response JSON contract.
+- Add example payloads to ai-service README.
+- Make sure /analyze-incident remains stable.
+- Optionally add a simple version prefix later, such as /api/v1/analyze-incident.
+- Make sure Java/Spring can map camelCase fields to snake_case contract when Phase 3 starts.
+
+Important architectural note:
+The updated project roadmap says Phase 3 will eventually use Kafka/event-driven integration, but Phase 2 should stay focused on the AI service.
+
+Do not implement Kafka in this phase.
+
+Recommended next action in the new chat
+=======================================
+
+Start with:
+
+7.1 Create configuration support for environment variables
+
+Specifically:
+- Create app/core/
+- Create app/core/__init__.py
+- Create app/core/config.py
+- Add .env to .gitignore
+- Decide how to read settings in Python/FastAPI
+
+Continue with small iterations and keep the checklist visible.
