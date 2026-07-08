@@ -1,23 +1,10 @@
 from fastapi import FastAPI
 
-from app.models.requests import IncidentAnalysisRequest
-from app.models.responses import IncidentAnalysisResponse
-from app.services.incident_analysis_service import analyze_incident
+from app.api.routes import router
 
 app = FastAPI(
     title="AI Incident Assistant - AI Service",
     version="0.1.0"
 )
 
-
-@app.get("/health")
-def health_check():
-    return {
-        "status": "ok",
-        "service": "ai-service"
-    }
-
-
-@app.post("/analyze-incident", response_model=IncidentAnalysisResponse)
-def analyze_incident_endpoint(request: IncidentAnalysisRequest):
-    return analyze_incident(request)
+app.include_router(router)
