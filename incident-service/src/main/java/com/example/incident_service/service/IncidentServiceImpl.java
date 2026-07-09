@@ -5,8 +5,12 @@ import com.example.incident_service.dto.IncidentResponse;
 import com.example.incident_service.dto.UpdateIncidentStatusRequest;
 import com.example.incident_service.entity.Incident;
 import com.example.incident_service.exception.ResourceNotFoundException;
+import com.example.incident_service.integration.ai.AiAnalysisClient;
+import com.example.incident_service.integration.ai.AiIncidentAnalysisRequest;
+import com.example.incident_service.integration.ai.AiIncidentAnalysisResponse;
 import com.example.incident_service.repository.IncidentRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,9 +19,11 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
+@Slf4j
 public class IncidentServiceImpl implements IncidentService {
 
     private final IncidentRepository incidentRepository;
+    private final AiAnalysisClient aiAnalysisClient;
 
     @Override
     @Transactional
@@ -60,6 +66,24 @@ public class IncidentServiceImpl implements IncidentService {
 
         Incident updated = incidentRepository.save(incident);
         return mapToResponse(updated);
+    }
+
+    @Override
+    public AiIncidentAnalysisResponse analyzeIncident(Long id) {
+        Incident incident = incidentRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Incident not found with id: " + id));
+
+        AiIncidentAnalysisRequest request = new AiIncidentAnalysisRequest(
+                incident.getTitle(),
+                incident.getDescription(),
+                incident.getRawLogs(),
+                incident.getServiceName(),
+                incident.getEnvironment(),
+                incident.getEnvironment(),
+                incident.getCreatedAt()
+        );
+        log.debug("Sending incident analysis request to ai-service: {}", request);
+        return aiAnalysisClient.analyzeIncident(request);
     }
 
     private IncidentResponse mapToResponse(Incident incident) {

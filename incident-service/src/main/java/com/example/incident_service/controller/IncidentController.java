@@ -3,6 +3,7 @@ package com.example.incident_service.controller;
 import com.example.incident_service.dto.CreateIncidentRequest;
 import com.example.incident_service.dto.IncidentResponse;
 import com.example.incident_service.dto.UpdateIncidentStatusRequest;
+import com.example.incident_service.integration.ai.AiIncidentAnalysisResponse;
 import com.example.incident_service.service.IncidentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -51,5 +52,11 @@ public class IncidentController {
     ) {
         log.info("Received request to update status for incident ID {}: {}", id, request);
         return ResponseEntity.ok(incidentService.updateIncidentStatus(id, request));
+    }
+
+    @PostMapping("/{id}/analysis")
+    public ResponseEntity<AiIncidentAnalysisResponse> analyzeIncident(@PathVariable Long id) {
+        log.info("Received request to analyze incident ID {}", id);
+        return ResponseEntity.ok(incidentService.analyzeIncident(id));
     }
 }
