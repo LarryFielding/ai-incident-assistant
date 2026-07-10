@@ -4,10 +4,12 @@ import com.example.incident_service.dto.CreateIncidentRequest;
 import com.example.incident_service.dto.IncidentResponse;
 import com.example.incident_service.dto.UpdateIncidentStatusRequest;
 import com.example.incident_service.entity.Incident;
+import com.example.incident_service.entity.IncidentAnalysis;
 import com.example.incident_service.exception.ResourceNotFoundException;
 import com.example.incident_service.integration.ai.AiAnalysisClient;
 import com.example.incident_service.integration.ai.AiIncidentAnalysisRequest;
 import com.example.incident_service.integration.ai.AiIncidentAnalysisResponse;
+import com.example.incident_service.repository.IncidentAnalysisRepository;
 import com.example.incident_service.repository.IncidentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +26,7 @@ public class IncidentServiceImpl implements IncidentService {
 
     private final IncidentRepository incidentRepository;
     private final AiAnalysisClient aiAnalysisClient;
+    private final IncidentAnalysisRepository incidentAnalysisRepository;
 
     @Override
     @Transactional
@@ -69,6 +72,7 @@ public class IncidentServiceImpl implements IncidentService {
     }
 
     @Override
+    @Transactional
     public AiIncidentAnalysisResponse analyzeIncident(Long id) {
         Incident incident = incidentRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Incident not found with id: " + id));
@@ -83,7 +87,28 @@ public class IncidentServiceImpl implements IncidentService {
                 incident.getCreatedAt()
         );
         log.debug("Sending incident analysis request to ai-service: {}", request);
-        return aiAnalysisClient.analyzeIncident(request);
+
+        AiIncidentAnalysisResponse response = aiAnalysisClient.analyzeIncident(request);
+
+        String suggestedActions = response.suggestedActions() == null
+                ? ""
+                : String.join(System.lineSeparator(), response.suggestedActions());
+
+        IncidentAnalysis analysis = IncidentAnalysis.builder()
+                .incident(incident)
+                .summary(response.summary())
+                .severity(response.severity())
+                .category(response.category())
+                .possibleRootCause(response.possibleRootCause())
+                .suggestedActions(suggestedActions)
+                .postmortemDraft(response.postmortemDraft())
+                .build();
+
+        incidentAnalysisRepository.save(analysis);
+
+        log.info("Saved incident analysis ID {} for incident ID {}", analysis.getId(), id);
+
+        return response;
     }
 
     private IncidentResponse mapToResponse(Incident incident) {
