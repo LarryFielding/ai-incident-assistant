@@ -1,0 +1,720 @@
+AI Incident Assistant — Handoff para Fase 3.1
+Java Python Integration → Kafka/Event-Driven Preparation
+
+Título sugerido del siguiente chat:
+Fase 3.1 AI Incident — Kafka Event-Driven Integration
+
+Fecha/contexto:
+Este archivo resume el trabajo realizado en la Fase 3 del proyecto AI Incident Assistant y deja el contexto listo para continuar desde el punto 9: Preparar transición a Kafka/event-driven.
+
+Estilo de trabajo que debe continuar:
+- Trabajar en iteraciones pequeñas.
+- Explicar conceptos con claridad, especialmente Kafka/event-driven design.
+- No generar demasiado código de golpe.
+- Mantener checklist actualizado.
+- Recomendar commits en puntos estables.
+- Explicar decisiones comparando Java/Spring Boot y Python/FastAPI cuando sea útil.
+- El usuario está aprendiendo, así que conviene explicar el porqué de cada cambio.
+
+============================================================
+1. Estado general del proyecto
+============================================================
+
+Proyecto:
+AI Incident Assistant
+
+Estructura esperada del repo:
+
+ai-incident-assistant/
+├── incident-service/
+├── ai-service/
+└── README.md
+
+Arquitectura actual validada:
+
+Postman / Client
+   ↓
+Spring Boot incident-service
+   ↓
+PostgreSQL: incidents
+   ↓ HTTP/1.1 POST
+FastAPI ai-service /analyze-incident
+   ↓
+LLM o rule-based fallback
+   ↓
+Spring Boot recibe análisis
+   ↓
+PostgreSQL: incident_analyses
+
+Arquitectura objetivo posterior:
+
+Client / Postman / Future Frontend
+   ↓
+Spring Boot incident-service
+   ↓
+Kafka topic: incident.analysis.requested
+   ↓
+Python FastAPI ai-service / Kafka consumer
+   ↓
+LLM o rule-based fallback
+   ↓
+Kafka topic: incident.analyzed
+   ↓
+Spring Boot incident-service / Kafka consumer
+   ↓
+PostgreSQL: incident_analyses
+
+============================================================
+2. Fase 2 — ai-service ya estaba completado
+============================================================
+
+El ai-service en Python/FastAPI ya estaba listo para integración.
+
+Endpoint estable:
+POST /analyze-incident
+
+Health endpoint:
+GET /health
+
+Swagger:
+http://127.0.0.1:8000/docs
+
+Run local:
+.\.venv\Scripts\Activate.ps1
+uvicorn app.main:app --reload
+
+Contrato request del ai-service:
+
+{
+  "title": "Database timeout in payment service",
+  "description": "Users report intermittent failures during checkout. Several transactions are failing during payment confirmation.",
+  "raw_logs": "java.sql.SQLTimeoutException: query timed out while executing checkout confirmation query",
+  "service_name": "payment-service",
+  "environment": "PROD",
+  "environment_name": "payments-prod-us-east-1",
+  "incident_occurred_at": "2026-05-28T03:15:00Z"
+}
+
+Contrato response del ai-service:
+
+{
+  "summary": "The incident affecting payment-service was classified as DATABASE with HIGH severity.",
+  "severity": "HIGH",
+  "category": "DATABASE",
+  "possible_root_cause": "The incident may be related to database connectivity, slow queries, or resource contention.",
+  "suggested_actions": [
+    "Review database connection pool metrics.",
+    "Check slow queries and database timeout logs.",
+    "Validate database availability and recent schema changes."
+  ],
+  "postmortem_draft": "Postmortem draft for incident in payment-service..."
+}
+
+Notas:
+- FastAPI usa snake_case.
+- Java usa camelCase internamente.
+- En Java se usaron DTOs de integración con @JsonProperty para mapear snake_case.
+
+============================================================
+3. Fase 3 — Java ↔ Python Integration completada hasta paso 8
+============================================================
+
+Checklist actual:
+
+Fase 3 — Java ↔ Python Integration
+
+0. Revisar estado actual de incident-service ✅
+1. Definir estrategia inicial de integración: HTTP primero vs Kafka directo ✅ HTTP primero
+2. Crear DTOs Java para contrato del ai-service ✅
+3. Crear cliente Java para llamar ai-service ✅
+4. Agregar configuración de URL del ai-service ✅
+5. Crear endpoint/flujo para solicitar análisis desde Java ✅
+6. Persistir resultado en IncidentAnalysis ✅
+7. Probar integración manual end-to-end ✅
+8. Agregar pruebas ✅
+   8.1 Service test con mock de AiAnalysisClient ✅
+   8.2 Controller endpoint test con MockMvc ✅
+9. Preparar transición a Kafka/event-driven ⬅️ siguiente
+
+============================================================
+4. Estado del incident-service antes de Kafka
+============================================================
+
+Package raíz:
+com.example.incident_service
+
+Estructura relevante actual:
+
+incident-service/
+└── src/main/java/com/example/incident_service/
+    ├── config/
+    │   └── AiServiceClientConfig.java
+    ├── controller/
+    │   └── IncidentController.java
+    ├── dto/
+    │   ├── CreateIncidentRequest.java
+    │   ├── IncidentResponse.java
+    │   └── UpdateIncidentStatusRequest.java
+    ├── entity/
+    │   ├── Incident.java
+    │   ├── IncidentAnalysis.java
+    │   └── IncidentStatus.java
+    ├── exception/
+    │   ├── GlobalExceptionHandler.java
+    │   └── ResourceNotFoundException.java
+    ├── integration/
+    │   └── ai/
+    │       ├── AiAnalysisClient.java
+    │       ├── AiIncidentAnalysisRequest.java
+    │       └── AiIncidentAnalysisResponse.java
+    ├── repository/
+    │   ├── IncidentRepository.java
+    │   └── IncidentAnalysisRepository.java
+    └── service/
+        ├── IncidentService.java
+        └── IncidentServiceImpl.java
+
+Migrations actuales:
+
+src/main/resources/db/migration/
+├── V1__create_incidents_table.sql
+├── V2__add_incident_indexes_and_defaults.sql
+└── V3__create_incident_analyses_table.sql
+
+============================================================
+5. DTOs Java de integración con ai-service
+============================================================
+
+Paquete:
+com.example.incident_service.integration.ai
+
+AiIncidentAnalysisRequest.java:
+
+package com.example.incident_service.integration.ai;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+import java.time.OffsetDateTime;
+
+public record AiIncidentAnalysisRequest(
+        String title,
+        String description,
+        @JsonProperty("raw_logs")
+        String rawLogs,
+        @JsonProperty("service_name")
+        String serviceName,
+        String environment,
+        @JsonProperty("environment_name")
+        String environmentName,
+        @JsonProperty("incident_occurred_at")
+        OffsetDateTime incidentOccurredAt
+) {
+}
+
+AiIncidentAnalysisResponse.java:
+
+package com.example.incident_service.integration.ai;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.List;
+
+public record AiIncidentAnalysisResponse(
+        String summary,
+        String severity,
+        String category,
+        @JsonProperty("possible_root_cause")
+        String possibleRootCause,
+        @JsonProperty("suggested_actions")
+        List<String> suggestedActions,
+        @JsonProperty("postmortem_draft")
+        String postmortemDraft
+) {
+}
+
+Nota importante:
+Como AiIncidentAnalysisResponse tiene @JsonProperty, cuando el controller lo devuelve directamente, el JSON público del endpoint Java sale con snake_case:
+- possible_root_cause
+- suggested_actions
+- postmortem_draft
+
+Esto se aceptó por ahora para evitar crear otro DTO público. Más adelante podría crearse un DTO Java-facing en camelCase.
+
+============================================================
+6. Cliente HTTP Java → FastAPI
+============================================================
+
+Se creó AiAnalysisClient para llamar a FastAPI:
+
+Paquete:
+com.example.incident_service.integration.ai
+
+Responsabilidad:
+- Recibir AiIncidentAnalysisRequest.
+- Hacer POST a /analyze-incident.
+- Convertir respuesta JSON a AiIncidentAnalysisResponse.
+
+Importante problema resuelto:
+Inicialmente RestClient/JDK HttpClient intentaba enviar un upgrade a HTTP/2 h2c contra Uvicorn/FastAPI.
+FastAPI mostraba:
+
+WARNING: Unsupported upgrade request.
+HEADERS: connection: Upgrade, HTTP2-Settings
+upgrade: h2c
+transfer-encoding: chunked
+RAW BODY: vacío
+
+Esto causaba que FastAPI respondiera 422:
+
+{"detail":[{"type":"missing","loc":["body"],"msg":"Field required","input":null}]}
+
+Solución:
+Forzar HTTP/1.1 en AiServiceClientConfig.
+
+AiServiceClientConfig debe usar algo equivalente a:
+
+package com.example.incident_service.config;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.web.client.RestClient;
+
+import java.net.http.HttpClient;
+import java.time.Duration;
+
+@Configuration
+public class AiServiceClientConfig {
+
+    @Bean
+    public RestClient aiServiceRestClient(
+            @Value("${ai-service.base-url}") String aiServiceBaseUrl
+    ) {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(Duration.ofSeconds(5))
+                .build();
+
+        JdkClientHttpRequestFactory requestFactory =
+                new JdkClientHttpRequestFactory(httpClient);
+
+        return RestClient.builder()
+                .requestFactory(requestFactory)
+                .baseUrl(aiServiceBaseUrl)
+                .build();
+    }
+}
+
+En application.yml se agregó:
+
+ai-service:
+  base-url: http://localhost:8000
+
+AiAnalysisClient debe usar:
+
+.post()
+.uri("/analyze-incident")
+.contentType(MediaType.APPLICATION_JSON)
+.accept(MediaType.APPLICATION_JSON)
+.body(request)
+.retrieve()
+.body(AiIncidentAnalysisResponse.class)
+
+============================================================
+7. Endpoint Java agregado
+============================================================
+
+Se agregó endpoint en IncidentController:
+
+POST /api/incidents/{id}/analysis
+
+Responsabilidad:
+- Recibir id de incidente.
+- Llamar a incidentService.analyzeIncident(id).
+- Devolver AiIncidentAnalysisResponse.
+
+Flujo actual:
+
+POST /api/incidents/{id}/analysis
+   ↓
+IncidentController
+   ↓
+IncidentServiceImpl.analyzeIncident(id)
+   ↓
+IncidentRepository.findById(id)
+   ↓
+AiAnalysisClient.analyzeIncident(request)
+   ↓
+FastAPI /analyze-incident
+   ↓
+IncidentAnalysisRepository.save(analysis)
+   ↓
+Response al cliente
+
+============================================================
+8. Persistencia de análisis
+============================================================
+
+Se agregó tabla incident_analyses mediante Flyway V3.
+
+Archivo:
+src/main/resources/db/migration/V3__create_incident_analyses_table.sql
+
+Contenido conceptual:
+
+CREATE TABLE incident_analyses (
+    id BIGSERIAL PRIMARY KEY,
+    incident_id BIGINT NOT NULL,
+    summary TEXT NOT NULL,
+    severity VARCHAR(50) NOT NULL,
+    category VARCHAR(100) NOT NULL,
+    possible_root_cause TEXT,
+    suggested_actions TEXT,
+    postmortem_draft TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_incident_analyses_incident
+        FOREIGN KEY (incident_id)
+        REFERENCES incidents(id)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX idx_incident_analyses_incident_id
+    ON incident_analyses(incident_id);
+
+CREATE INDEX idx_incident_analyses_created_at
+    ON incident_analyses(created_at);
+
+Nota aclarada durante la fase:
+- incidents.id es BIGSERIAL PRIMARY KEY.
+- En PostgreSQL BIGSERIAL realmente crea una columna BIGINT con default nextval(...).
+- Por eso incident_analyses.incident_id debe ser BIGINT, no BIGSERIAL.
+- La tabla hija no debe generar su propio id de incidente; solo referencia el id existente.
+
+Entidad agregada:
+IncidentAnalysis.java
+
+Puntos relevantes:
+- @Entity
+- @Table(name = "incident_analyses")
+- @ManyToOne(fetch = FetchType.LAZY, optional = false)
+- @JoinColumn(name = "incident_id", nullable = false)
+- Campos: summary, severity, category, possibleRootCause, suggestedActions, postmortemDraft, createdAt.
+- @PrePersist asigna OffsetDateTime.now() si createdAt es null.
+
+Repository agregado:
+IncidentAnalysisRepository.java
+
+Método útil para futuro:
+List<IncidentAnalysis> findByIncidentIdOrderByCreatedAtDesc(Long incidentId);
+
+============================================================
+9. Problema transaccional resuelto
+============================================================
+
+Al intentar guardar IncidentAnalysis apareció:
+
+ERROR: cannot execute INSERT in a read-only transaction
+
+Causa:
+IncidentServiceImpl tenía @Transactional(readOnly = true) a nivel de clase.
+El nuevo método analyzeIncident ahora hace INSERT, por lo que heredaba readOnly=true.
+
+Solución:
+Agregar @Transactional normal al método analyzeIncident.
+
+Regla acordada:
+- Métodos solo lectura: heredan @Transactional(readOnly = true).
+- Métodos que hacen INSERT/UPDATE/DELETE: llevan @Transactional.
+
+Ejemplo conceptual:
+
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class IncidentServiceImpl implements IncidentService {
+
+    @Override
+    @Transactional
+    public IncidentResponse createIncident(CreateIncidentRequest request) { ... }
+
+    @Override
+    public List<IncidentResponse> getAllIncidents() { ... }
+
+    @Override
+    public IncidentResponse getIncidentById(Long id) { ... }
+
+    @Override
+    @Transactional
+    public IncidentResponse updateIncidentStatus(Long id, UpdateIncidentStatusRequest request) { ... }
+
+    @Override
+    @Transactional
+    public AiIncidentAnalysisResponse analyzeIncident(Long id) { ... }
+}
+
+============================================================
+10. Tests agregados
+============================================================
+
+8.1 Service test con mock de AiAnalysisClient ✅
+
+Archivo:
+src/test/java/com/example/incident_service/service/IncidentServiceImplTest.java
+
+Objetivo:
+Probar IncidentServiceImpl.analyzeIncident(id) sin levantar Spring completo, sin PostgreSQL y sin FastAPI.
+
+Mocks usados:
+- IncidentRepository
+- AiAnalysisClient
+- IncidentAnalysisRepository
+
+Verifica que:
+- Busca el incidente por id.
+- Construye AiIncidentAnalysisRequest correctamente.
+- Llama a aiAnalysisClient.analyzeIncident(request).
+- Guarda IncidentAnalysis.
+- Devuelve la respuesta del ai-service.
+
+8.2 Controller endpoint test con MockMvc ✅
+
+Se intentó usar @WebMvcTest, pero Maven no encontraba:
+org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
+
+Aunque spring-boot-starter-test estaba en pom.xml, la clase no resolvía. Se intentó agregar spring-boot-test-autoconfigure sin versión, pero siguió sin resolverse. Se evitó bloquear la fase.
+
+Solución usada:
+MockMvcBuilders.standaloneSetup(...)
+
+Archivo:
+src/test/java/com/example/incident_service/controller/IncidentControllerTest.java
+
+Objetivo:
+Probar el endpoint POST /api/incidents/{id}/analysis sin cargar Spring completo.
+
+Capa probada:
+HTTP request
+   ↓
+IncidentController
+   ↓ mock IncidentService
+   ↓ JSON response
+
+Nota:
+El test inicialmente esperaba camelCase:
+- possibleRootCause
+- suggestedActions
+- postmortemDraft
+
+Pero la respuesta real usa snake_case porque AiIncidentAnalysisResponse tiene @JsonProperty:
+- possible_root_cause
+- suggested_actions
+- postmortem_draft
+
+Se ajustó el test al JSON real.
+
+============================================================
+11. Commits recomendados antes de pasar a Fase 3.1
+============================================================
+
+Si no se han hecho, se recomendaron commits en estos puntos:
+
+git add .
+git commit -m "Integrate incident service with AI service over HTTP"
+
+git add .
+git commit -m "Persist AI incident analysis results"
+
+git add .
+git commit -m "Add tests for incident analysis flow"
+
+Antes de commitear verificar:
+- Quitar prints/middleware temporal de FastAPI.
+- Verificar que .env no esté staged.
+- Confirmar que V3__create_incident_analyses_table.sql sí esté incluido.
+- Confirmar IncidentAnalysis.java y IncidentAnalysisRepository.java.
+- Confirmar tests nuevos.
+
+============================================================
+12. Punto exacto para continuar: Fase 3.1 desde paso 9
+============================================================
+
+Continuar desde:
+
+9. Preparar transición a Kafka/event-driven
+
+Checklist sugerido para Fase 3.1:
+
+Fase 3.1 — Kafka/Event-Driven Integration Preparation
+
+9.0 Revisar estado actual después de commits de Fase 3 ⬜
+9.1 Crear clases de evento Java, sin Kafka todavía ⬅️ siguiente
+9.2 Definir topics Kafka ⬜
+9.3 Agregar Docker Compose para Kafka local ⬜
+9.4 Agregar dependencias Spring Kafka en incident-service ⬜
+9.5 Crear producer Java para incident.analysis.requested ⬜
+9.6 Crear endpoint async para solicitar análisis vía evento ⬜
+9.7 Preparar consumer Python para incident.analysis.requested ⬜
+9.8 Python publica incident.analyzed ⬜
+9.9 Java consume incident.analyzed y persiste IncidentAnalysis ⬜
+9.10 Mantener temporalmente flujo HTTP como baseline/fallback ⬜
+
+============================================================
+13. Diseño propuesto de eventos Kafka
+============================================================
+
+Topic 1:
+incident.analysis.requested
+
+Productor:
+Spring Boot incident-service
+
+Consumidor:
+Python ai-service
+
+Evento propuesto:
+
+{
+  "event_id": "a7f3d0c4-9e6f-4c2e-89f2-0d07fa50f001",
+  "event_type": "incident.analysis.requested",
+  "occurred_at": "2026-07-09T23:20:00Z",
+  "incident_id": 35,
+  "title": "Database timeout in payment service",
+  "description": "Users report intermittent failures during checkout.",
+  "raw_logs": "java.sql.SQLTimeoutException: query timed out",
+  "service_name": "payment-service",
+  "environment": "PROD",
+  "environment_name": "PROD",
+  "incident_occurred_at": "2026-07-09T23:00:00Z"
+}
+
+Notas:
+- Es parecido a AiIncidentAnalysisRequest, pero incluye metadata de evento.
+- event_id debe ser UUID.
+- event_type permite debugging/routing.
+- occurred_at indica cuándo se generó el evento, no cuándo ocurrió el incidente.
+- incident_occurred_at representa el tiempo del incidente original.
+
+Topic 2:
+incident.analyzed
+
+Productor:
+Python ai-service
+
+Consumidor:
+Spring Boot incident-service
+
+Evento propuesto:
+
+{
+  "event_id": "7e8b78de-96d8-4e4e-988b-ec6de7f2be90",
+  "event_type": "incident.analyzed",
+  "occurred_at": "2026-07-09T23:21:00Z",
+  "incident_id": 35,
+  "summary": "The incident affecting payment-service was classified as DATABASE with HIGH severity.",
+  "severity": "HIGH",
+  "category": "DATABASE",
+  "possible_root_cause": "The incident may be related to database connectivity or slow queries.",
+  "suggested_actions": [
+    "Review database connection pool metrics.",
+    "Check slow queries and database timeout logs."
+  ],
+  "postmortem_draft": "Postmortem draft for payment-service incident."
+}
+
+Posible topic futuro:
+incident.analysis.failed
+
+Uso:
+- Cuando Python no pueda analizar el incidente.
+- Podría contener incident_id, error_code, error_message, failed_at, provider.
+
+============================================================
+14. Recomendación inmediata para Fase 3.1
+============================================================
+
+No instalar Kafka inmediatamente.
+
+Primer paso recomendado:
+9.1 Crear clases de evento Java, sin publicar todavía.
+
+Paquete sugerido:
+
+src/main/java/com/example/incident_service/messaging/event
+
+Clases sugeridas:
+
+IncidentAnalysisRequestedEvent.java
+IncidentAnalyzedEvent.java
+
+Esto prepara los contratos event-driven sin meter complejidad de infraestructura todavía.
+
+Después de crear los records, compilar:
+
+.\mvnw.cmd clean compile
+
+Luego se puede hacer commit:
+
+git add .
+git commit -m "Define incident analysis Kafka event contracts"
+
+============================================================
+15. Diferencia conceptual que debe explicarse en Fase 3.1
+============================================================
+
+Flujo HTTP actual:
+- Síncrono.
+- El cliente espera respuesta inmediata.
+- Si FastAPI tarda o falla, el endpoint Java tarda o falla.
+- Útil para validar contrato y debug.
+
+Flujo Kafka futuro:
+- Asíncrono.
+- Cliente solicita análisis y recibe respuesta rápida tipo 202 Accepted.
+- El análisis se procesa después.
+- Java y Python quedan desacoplados temporalmente.
+- Permite reintentos, resiliencia y escalamiento.
+
+Cambio importante de API:
+Actualmente:
+POST /api/incidents/{id}/analysis
+→ devuelve análisis completo.
+
+Futuro posible:
+POST /api/incidents/{id}/analysis-requests
+→ devuelve 202 Accepted o un tracking id.
+
+Luego:
+GET /api/incidents/{id}/analyses
+→ consulta historial de análisis guardados.
+
+============================================================
+16. Pendientes técnicos útiles antes o durante Kafka
+============================================================
+
+Pendientes opcionales:
+- Crear endpoint GET /api/incidents/{id}/analyses para consultar historial.
+- Crear DTO público para IncidentAnalysis en Java.
+- Decidir si la API Java pública debe devolver camelCase en vez de snake_case.
+- Cambiar suggested_actions en DB de TEXT a JSONB más adelante.
+- Agregar manejo de errores más fino en AiAnalysisClient.
+- Agregar timeout/read timeout al cliente HTTP si no se hizo completo.
+- Mejorar tests cuando se resuelva el problema de @WebMvcTest.
+
+============================================================
+17. Estado final de esta fase
+============================================================
+
+Fase 3 terminó con:
+- Integración HTTP Java → Python funcionando.
+- URL del ai-service configurable.
+- RestClient ajustado a HTTP/1.1 para evitar h2c con Uvicorn.
+- Endpoint Java POST /api/incidents/{id}/analysis funcionando.
+- Persistencia en incident_analyses funcionando.
+- Prueba manual end-to-end validada.
+- Service test con mock de AiAnalysisClient funcionando.
+- Controller test con MockMvc standalone funcionando.
+
+Siguiente fase:
+Fase 3.1 — Kafka/Event-Driven Integration Preparation
+
+Primer paso:
+9.1 Crear clases de evento Java para incident.analysis.requested e incident.analyzed, sin Kafka todavía.
