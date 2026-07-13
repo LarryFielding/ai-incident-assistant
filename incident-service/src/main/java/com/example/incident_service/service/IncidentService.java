@@ -18,4 +18,6 @@ public interface IncidentService {
     IncidentResponse updateIncidentStatus(Long id, UpdateIncidentStatusRequest request);
 
     AiIncidentAnalysisResponse analyzeIncident(Long id);
+
+    void requestIncidentAnalysis(Long incidentId);
 }

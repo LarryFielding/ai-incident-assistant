@@ -43,6 +43,12 @@ public class Incident {
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
+    @Column(name = "environment_name")
+    private String environmentName;
+
+    @Column(name = "incident_occurred_at")
+    private OffsetDateTime incidentOccurredAt;
+
     @PrePersist
     public void prePersist() {
         OffsetDateTime now = OffsetDateTime.now();

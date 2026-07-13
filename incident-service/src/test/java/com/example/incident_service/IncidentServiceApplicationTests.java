@@ -19,6 +19,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.URI;
+import java.time.OffsetDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -51,7 +52,9 @@ class IncidentServiceApplicationTests {
 				"Payment requests are returning HTTP 500",
 				"critical error",
 				"payment-service",
-				"PROD"
+				"PROD",
+				"prod-123",
+				OffsetDateTime.now()
 		);
 
 		HttpHeaders headers = new HttpHeaders();

@@ -11,8 +11,10 @@ public record IncidentResponse(
         String rawLogs,
         String serviceName,
         String environment,
+        String environmentName,
         IncidentStatus status,
         OffsetDateTime createdAt,
-        OffsetDateTime updatedAt
+        OffsetDateTime updatedAt,
+        OffsetDateTime incidentOccurredAt
 ) {
 }

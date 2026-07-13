@@ -9,6 +9,9 @@ import com.example.incident_service.exception.ResourceNotFoundException;
 import com.example.incident_service.integration.ai.AiAnalysisClient;
 import com.example.incident_service.integration.ai.AiIncidentAnalysisRequest;
 import com.example.incident_service.integration.ai.AiIncidentAnalysisResponse;
+import com.example.incident_service.messaging.KafkaTopics;
+import com.example.incident_service.messaging.event.IncidentAnalysisRequestedEvent;
+import com.example.incident_service.messaging.producer.IncidentAnalysisRequestedProducer;
 import com.example.incident_service.repository.IncidentAnalysisRepository;
 import com.example.incident_service.repository.IncidentRepository;
 import lombok.RequiredArgsConstructor;
@@ -16,7 +19,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -27,16 +32,25 @@ public class IncidentServiceImpl implements IncidentService {
     private final IncidentRepository incidentRepository;
     private final AiAnalysisClient aiAnalysisClient;
     private final IncidentAnalysisRepository incidentAnalysisRepository;
+    private final IncidentAnalysisRequestedProducer analysisRequestedProducer;
 
     @Override
     @Transactional
     public IncidentResponse createIncident(CreateIncidentRequest request) {
+
+        OffsetDateTime incidentOccurredAt =
+                request.incidentOccurredAt() == null ?
+                        OffsetDateTime.now() :
+                        request.incidentOccurredAt();
+
         Incident incident = Incident.builder()
                 .title(request.title())
                 .description(request.description())
                 .rawLogs(request.rawLogs())
                 .serviceName(request.serviceName())
                 .environment(request.environment())
+                .environmentName(request.environmentName())
+                .incidentOccurredAt(incidentOccurredAt)
                 .build();
 
         Incident saved = incidentRepository.save(incident);
@@ -119,9 +133,39 @@ public class IncidentServiceImpl implements IncidentService {
                 incident.getRawLogs(),
                 incident.getServiceName(),
                 incident.getEnvironment(),
+                incident.getEnvironmentName(),
                 incident.getStatus(),
                 incident.getCreatedAt(),
-                incident.getUpdatedAt()
+                incident.getUpdatedAt(),
+                incident.getIncidentOccurredAt()
         );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public void requestIncidentAnalysis(Long incidentId) {
+        Incident incident = incidentRepository.findById(incidentId)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Incident not found with id: " + incidentId
+                        )
+                );
+
+        IncidentAnalysisRequestedEvent event =
+                new IncidentAnalysisRequestedEvent(
+                        UUID.randomUUID(),
+                        KafkaTopics.INCIDENT_ANALYSIS_REQUESTED,
+                        OffsetDateTime.now(),
+                        incident.getId(),
+                        incident.getTitle(),
+                        incident.getDescription(),
+                        incident.getRawLogs(),
+                        incident.getServiceName(),
+                        incident.getEnvironment(),
+                        incident.getEnvironmentName(),
+                        incident.getIncidentOccurredAt()
+                );
+
+        analysisRequestedProducer.publish(event);
     }
 }

@@ -3,6 +3,8 @@ package com.example.incident_service.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
+import java.time.OffsetDateTime;
+
 public record CreateIncidentRequest(
 
         @NotBlank(message = "Title is required")
@@ -22,6 +24,10 @@ public record CreateIncidentRequest(
 
         @NotBlank(message = "Environment is required")
         @Size(max = 50)
-        String environment
+        String environment,
+
+        String environmentName,
+
+        OffsetDateTime incidentOccurredAt
 ) {
 }
