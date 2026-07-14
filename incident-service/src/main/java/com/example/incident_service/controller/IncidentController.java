@@ -59,4 +59,10 @@ public class IncidentController {
         log.info("Received request to analyze incident ID {}", id);
         return ResponseEntity.ok(incidentService.analyzeIncident(id));
     }
+
+    @PostMapping("/{id}/analysis-requests")
+    public ResponseEntity<Void> requestIncidentAnalysis(@PathVariable Long id ) {
+        incidentService.requestIncidentAnalysis(id);
+        return ResponseEntity.accepted().build();
+    }
 }
