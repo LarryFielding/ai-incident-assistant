@@ -63,6 +63,8 @@ def create_consumer() -> Consumer:
 
 def consume_analysis_requests() -> None:
     consumer = create_consumer()
+    producer = create_producer()
+
     consumer.subscribe([ANALYSIS_REQUESTED_TOPIC])
 
     print(
@@ -92,8 +94,11 @@ def consume_analysis_requests() -> None:
                 print(event.model_dump_json(indent=2))
 
                 analyzed_event = process_analysis_request(event)
-
                 print("Incident analysis completed:")
+
+                publish_incident_analyzed(producer, analyzed_event)
+                print("Incident analyzed event published:")
+
                 print(analyzed_event.model_dump_json(indent=2))
 
             except (json.JSONDecodeError, ValidationError) as exc:
