@@ -11,6 +11,7 @@ import com.example.incident_service.integration.ai.AiIncidentAnalysisRequest;
 import com.example.incident_service.integration.ai.AiIncidentAnalysisResponse;
 import com.example.incident_service.messaging.KafkaTopics;
 import com.example.incident_service.messaging.event.IncidentAnalysisRequestedEvent;
+import com.example.incident_service.messaging.event.IncidentAnalyzedEvent;
 import com.example.incident_service.messaging.producer.IncidentAnalysisRequestedProducer;
 import com.example.incident_service.repository.IncidentAnalysisRepository;
 import com.example.incident_service.repository.IncidentRepository;
@@ -167,5 +168,30 @@ public class IncidentServiceImpl implements IncidentService {
                 );
 
         analysisRequestedProducer.publish(event);
+    }
+
+    @Override
+    @Transactional
+    public void saveIncidentAnalysis(IncidentAnalyzedEvent event) {
+        Incident incident = incidentRepository.findById(event.incidentId())
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                "Incident not found with id: " + event.incidentId()
+                        )
+                );
+
+        IncidentAnalysis analysis = new IncidentAnalysis();
+
+        analysis.setIncident(incident);
+        analysis.setSummary(event.summary());
+        analysis.setSeverity(event.severity());
+        analysis.setCategory(event.category());
+        analysis.setPossibleRootCause(event.possibleRootCause());
+        analysis.setSuggestedActions(
+                String.join(System.lineSeparator(), event.suggestedActions())
+        );
+        analysis.setPostmortemDraft(event.postmortemDraft());
+
+        incidentAnalysisRepository.save(analysis);
     }
 }

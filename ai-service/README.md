@@ -250,3 +250,239 @@ Example mapping:
 | `postmortem_draft` | `postmortemDraft` |
 
 Phase 3 should not change this contract unless there is a clear reason.
+
+# Running `ai-service`: FastAPI and Kafka Consumer
+
+## Objective
+
+The `ai-service` can currently receive incident analysis requests through two different paths:
+
+1. Through the FastAPI HTTP endpoint.
+2. Through events consumed from Kafka.
+
+Both paths reuse the same internal analysis logic.
+
+---
+
+## 1. Activate the virtual environment
+
+From PowerShell:
+
+```powershell
+cd "C:\Users\Larry Camarena\Documents\proyectos\ai-incident-assistant\ai-service"
+```
+
+Then run:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+---
+
+## 2. Run the Kafka consumer
+
+To start the process that listens for analysis requests from Kafka:
+
+```powershell
+python -m app.messaging.kafka_consumer
+```
+
+The terminal must remain open while the consumer is running.
+
+This process listens to the following topic:
+
+```text
+incident.analysis.requested
+```
+
+When it receives an event, it:
+
+1. Deserializes the JSON.
+2. Validates it with Pydantic.
+3. Transforms it into an `IncidentAnalysisRequest`.
+4. Runs the internal analysis logic.
+5. Builds an `IncidentAnalyzedEvent`.
+6. Publishes the result to:
+
+```text
+incident.analyzed
+```
+
+---
+
+## 3. Current Kafka flow
+
+The event-driven flow is:
+
+```text
+Postman
+   ↓ HTTP
+Spring Boot: POST /api/incidents/{id}/analysis-requests
+   ↓ publishes event
+Kafka: incident.analysis.requested
+   ↓ consumed by
+Python kafka_consumer
+   ↓ calls directly
+Internal analysis logic
+   ↓ publishes event
+Kafka: incident.analyzed
+   ↓ consumed by
+Spring Boot listener
+```
+
+The FastAPI HTTP endpoint does not participate in this flow.
+
+The Kafka consumer does not make an HTTP request to:
+
+```text
+http://localhost:8000/analyze-incident
+```
+
+Instead, it invokes the internal analysis function directly, for example:
+
+```python
+analysis_result = analyze_incident(analysis_request)
+```
+
+---
+
+## 4. Run FastAPI
+
+To start the traditional HTTP endpoint:
+
+```powershell
+uvicorn app.main:app --reload
+```
+
+This enables:
+
+```http
+POST /analyze-incident
+```
+
+and:
+
+```http
+GET /health
+```
+
+Swagger is available at:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+---
+
+## 5. Traditional HTTP flow
+
+The previous synchronous flow is:
+
+```text
+Spring Boot
+   ↓ HTTP
+FastAPI: POST /analyze-incident
+   ↓
+Internal analysis logic
+   ↓ HTTP response
+Spring Boot
+```
+
+This flow requires Uvicorn to be running.
+
+The corresponding Java endpoint is:
+
+```http
+POST /api/incidents/{id}/analysis
+```
+
+This endpoint waits for the complete response from `ai-service` before returning a response to the client.
+
+---
+
+## 6. FastAPI and Kafka reuse the same logic
+
+There are currently two different entry points into the analysis logic:
+
+```text
+FastAPI endpoint ──────┐
+                       ├──→ analyze_incident(...)
+Kafka consumer ────────┘
+```
+
+This avoids duplicating business logic.
+
+The FastAPI endpoint handles HTTP transport.
+
+The Kafka consumer handles event-driven transport.
+
+The analysis logic remains separate from both entry mechanisms.
+
+---
+
+## 7. When to run each process
+
+### HTTP flow only
+
+Run:
+
+```powershell
+uvicorn app.main:app --reload
+```
+
+Use it with:
+
+```http
+POST /api/incidents/{id}/analysis
+```
+
+### Kafka flow only
+
+Run:
+
+```powershell
+python -m app.messaging.kafka_consumer
+```
+
+Use it with:
+
+```http
+POST /api/incidents/{id}/analysis-requests
+```
+
+### Both flows available
+
+Open two terminals inside `ai-service`.
+
+Terminal 1:
+
+```powershell
+uvicorn app.main:app --reload
+```
+
+Terminal 2:
+
+```powershell
+python -m app.messaging.kafka_consumer
+```
+
+This keeps both the HTTP flow and the Kafka flow available.
+
+---
+
+## 8. Current project state
+
+Both paths are currently preserved:
+
+```text
+POST /api/incidents/{id}/analysis
+→ synchronous HTTP integration
+→ requires FastAPI/Uvicorn
+
+POST /api/incidents/{id}/analysis-requests
+→ asynchronous Kafka integration
+→ requires kafka_consumer.py
+```
+
+The HTTP flow is temporarily retained as a baseline and fallback while the Kafka integration is completed and validated.
