@@ -1,0 +1,815 @@
+AI Incident Assistant — Handoff para Fase 4
+Dockerización del sistema completo
+
+Título sugerido del siguiente chat:
+Fase 4 AI Incident — Dockerization
+
+Fecha de cierre del handoff:
+Julio de 2026
+
+============================================================
+0. Forma de trabajo que debe mantenerse
+============================================================
+
+- Trabajar en iteraciones pequeñas.
+- Explicar el propósito de cada cambio antes de implementarlo.
+- Mantener un checklist actualizado.
+- No generar demasiado código de una sola vez.
+- Recomendar commits en puntos estables.
+- Explicar claramente Docker, redes, puertos, imágenes, contenedores y variables de entorno.
+- Distinguir entre configuración local, configuración dentro de contenedores y configuración para nube.
+- Mantener breves las iteraciones de bajo riesgo.
+- Explicar con mayor profundidad decisiones de arquitectura, seguridad, resiliencia, testing y despliegue.
+
+============================================================
+1. Estado general del proyecto al cerrar Fase 3.1
+============================================================
+
+Proyecto:
+AI Incident Assistant
+
+Estructura principal:
+
+ai-incident-assistant/
+├── incident-service/
+├── ai-service/
+├── docker-compose.yml
+├── README.md
+└── documentación auxiliar
+
+Stack actual:
+
+incident-service:
+- Java
+- Spring Boot 4
+- Spring Web
+- Spring Data JPA
+- Spring Kafka
+- PostgreSQL
+- Flyway
+- Maven
+- Jackson 3 / Spring Kafka 4 serializers
+
+ai-service:
+- Python
+- FastAPI
+- Pydantic
+- confluent-kafka
+- analizador rule-based
+- integración opcional con Gemini/LLM
+
+Infraestructura local:
+- PostgreSQL en Docker
+- Apache Kafka en Docker
+- Kafka en modo KRaft
+- Sin ZooKeeper
+
+============================================================
+2. Arquitectura actual validada
+============================================================
+
+Flujo HTTP síncrono conservado:
+
+Client / Postman
+   ↓
+POST /api/incidents/{id}/analysis
+   ↓
+Spring Boot incident-service
+   ↓ HTTP/1.1
+FastAPI POST /analyze-incident
+   ↓
+LLM o rule-based analyzer
+   ↓
+Spring Boot recibe el resultado
+   ↓
+PostgreSQL: incident_analyses
+
+Flujo Kafka asíncrono completado:
+
+Client / Postman
+   ↓
+POST /api/incidents/{id}/analysis-requests
+   ↓ responde 202 Accepted
+Spring Boot incident-service
+   ↓ publica
+Kafka topic: incident.analysis.requested
+   ↓ consume
+Python ai-service Kafka consumer
+   ↓
+Pydantic valida el evento
+   ↓
+Lógica interna de análisis
+   ↓ publica
+Kafka topic: incident.analyzed
+   ↓ consume
+Spring Boot Kafka listener
+   ↓
+IncidentService
+   ↓
+PostgreSQL: incident_analyses
+
+El endpoint FastAPI no participa en el flujo Kafka.
+El consumer Python invoca directamente la misma lógica interna que utiliza FastAPI.
+
+============================================================
+3. Fase 3.1 completada
+============================================================
+
+9.0 Revisar estado posterior a Fase 3 ✅
+9.1 Crear contratos de eventos Java ✅
+9.2 Definir topics Kafka ✅
+9.3 Levantar Kafka local con Docker Compose ✅
+9.4 Agregar Spring Kafka ✅
+9.5 Crear producer Java ✅
+9.6 Crear endpoint asíncrono con 202 Accepted ✅
+9.7 Crear consumer Python ✅
+9.8 Python publica incident.analyzed ✅
+9.9 Java consume y persiste el análisis ✅
+9.10 Mantener HTTP como baseline/fallback documentado ✅
+
+============================================================
+4. Topics, consumer groups y eventos
+============================================================
+
+Topics:
+
+incident.analysis.requested
+
+Productor:
+- Spring Boot incident-service
+
+Consumidor:
+- Python ai-service
+
+incident.analyzed
+
+Productor:
+- Python ai-service
+
+Consumidor:
+- Spring Boot incident-service
+
+Consumer groups:
+
+Python:
+ai-service-analysis-consumer
+
+Java:
+incident-service-analysis-consumer
+
+Key:
+incidentId convertido a String.
+
+Eventos Java:
+
+com.example.incident_service.messaging.event.IncidentAnalysisRequestedEvent
+com.example.incident_service.messaging.event.IncidentAnalyzedEvent
+
+Modelos Python:
+
+app.messaging.models.IncidentAnalysisRequestedEvent
+app.messaging.models.IncidentAnalyzedEvent
+
+============================================================
+5. Docker actual
+============================================================
+
+Actualmente ya existe un docker-compose.yml que levanta Kafka.
+
+Kafka:
+
+- Imagen: apache/kafka:4.1.2
+- Modo: KRaft
+- Roles: broker,controller
+- Puerto externo: localhost:9092
+- Nombre del contenedor: ai-incident-kafka
+
+PostgreSQL también se ejecuta en Docker, aunque puede pertenecer a otro proyecto Compose o a otro archivo Compose.
+
+Comandos útiles:
+
+docker ps
+
+docker ps -a
+
+docker compose ps
+
+docker compose up -d kafka
+
+docker compose logs kafka
+
+============================================================
+6. Objetivo real de Fase 4
+============================================================
+
+Fase 4 debe containerizar las dos aplicaciones que todavía se ejecutan directamente desde Windows:
+
+- incident-service
+- ai-service
+
+Al terminar, todo el sistema deberá poder levantarse desde Docker Compose:
+
+- incident-service
+- ai-service
+- postgres
+- kafka
+
+Objetivo operativo:
+
+docker compose up --build
+
+debe levantar el sistema completo sin ejecutar manualmente:
+
+- .\mvnw.cmd spring-boot:run
+- uvicorn app.main:app --reload
+- python -m app.messaging.kafka_consumer
+
+============================================================
+7. Decisión importante para ai-service
+============================================================
+
+Actualmente ai-service tiene dos procesos ejecutables:
+
+1. FastAPI/Uvicorn
+2. Kafka consumer
+
+No conviene asumir que un contenedor debe ejecutar ambos procesos sin diseñarlo explícitamente.
+
+Opciones:
+
+Opción A — Dos contenedores con la misma imagen
+
+ai-service-api
+- Ejecuta Uvicorn.
+- Expone FastAPI.
+
+ai-service-consumer
+- Ejecuta python -m app.messaging.kafka_consumer.
+- No expone puerto HTTP.
+
+Ventajas:
+- Separación clara de responsabilidades.
+- Escalado independiente.
+- Reinicios independientes.
+- Más cercano a un diseño real.
+
+Esta es la opción recomendada.
+
+Opción B — Un solo contenedor con dos procesos
+
+Requeriría:
+- supervisor;
+- script de arranque;
+- gestión de señales;
+- mayor complejidad.
+
+No se recomienda para esta fase de aprendizaje.
+
+Arquitectura Docker recomendada:
+
+incident-service
+ai-service-api
+ai-service-consumer
+postgres
+kafka
+
+Aunque conceptualmente siga existiendo un solo microservicio Python, se ejecutan dos workloads diferentes usando la misma imagen.
+
+============================================================
+8. Problema de localhost dentro de Docker
+============================================================
+
+Actualmente las aplicaciones usan direcciones como:
+
+localhost:9092
+localhost:5432
+localhost:8000
+
+Dentro de un contenedor:
+
+localhost
+=
+el mismo contenedor
+
+Por tanto, incident-service no debe buscar Kafka en localhost:9092 cuando esté containerizado.
+
+Debe usar el nombre del servicio Compose:
+
+kafka:9092
+
+PostgreSQL:
+
+postgres:5432
+
+FastAPI desde incident-service:
+
+ai-service-api:8000
+
+Ejemplo conceptual:
+
+Local fuera de Docker:
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+
+Dentro de Compose:
+KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+
+La Fase 4 debe eliminar valores hardcoded y usar variables de entorno.
+
+============================================================
+9. Configuración que debe externalizarse
+============================================================
+
+incident-service:
+
+- SPRING_DATASOURCE_URL
+- SPRING_DATASOURCE_USERNAME
+- SPRING_DATASOURCE_PASSWORD
+- SPRING_KAFKA_BOOTSTRAP_SERVERS
+- AI_SERVICE_BASE_URL
+
+ai-service:
+
+- KAFKA_BOOTSTRAP_SERVERS
+- ANALYSIS_REQUESTED_TOPIC
+- INCIDENT_ANALYZED_TOPIC
+- CONSUMER_GROUP_ID
+- USE_LLM
+- proveedor/modelo LLM
+- API keys
+
+No se deben copiar secretos dentro de las imágenes.
+
+No se debe versionar .env con claves reales.
+
+Puede agregarse:
+
+.env.example
+
+con nombres de variables y valores de ejemplo no sensibles.
+
+============================================================
+10. Archivos esperados en Fase 4
+============================================================
+
+incident-service/Dockerfile
+
+ai-service/Dockerfile
+
+.dockerignore en incident-service
+
+.dockerignore en ai-service
+
+docker-compose.yml actualizado o nuevo compose consolidado
+
+.env.example
+
+Posiblemente:
+
+infra/
+└── docker/
+    └── scripts o configuración auxiliar
+
+No es obligatorio crear infra/ si todavía no aporta claridad.
+
+============================================================
+11. Dockerfile recomendado para incident-service
+============================================================
+
+Se recomienda multi-stage build.
+
+Etapa 1:
+- Imagen Maven/JDK.
+- Copiar pom.xml y código.
+- Ejecutar package.
+
+Etapa 2:
+- Imagen JRE más pequeña.
+- Copiar únicamente el JAR.
+- Ejecutar java -jar.
+
+Objetivos:
+- No incluir Maven en la imagen final.
+- Reducir tamaño.
+- Separar build de runtime.
+- Hacer la imagen reproducible.
+
+Pendiente:
+Confirmar el nombre exacto del JAR generado y la versión de Java configurada en pom.xml.
+
+============================================================
+12. Dockerfile recomendado para ai-service
+============================================================
+
+Una sola imagen base Python puede servir para:
+
+- ai-service-api
+- ai-service-consumer
+
+La imagen debe:
+
+- usar una versión fija de Python;
+- instalar requirements.txt;
+- copiar app/;
+- definir directorio de trabajo;
+- usar variables de entorno;
+- evitar instalar dependencias innecesarias.
+
+En docker-compose.yml se define un command distinto para cada workload.
+
+Ejemplo conceptual:
+
+ai-service-api:
+  command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+ai-service-consumer:
+  command: python -m app.messaging.kafka_consumer
+
+============================================================
+13. Redes y service discovery
+============================================================
+
+Docker Compose crea una red interna por defecto.
+
+Los servicios se resuelven por nombre:
+
+incident-service
+ai-service-api
+ai-service-consumer
+postgres
+kafka
+
+Ejemplo:
+
+incident-service → kafka:9092
+
+ai-service-consumer → kafka:9092
+
+incident-service → postgres:5432
+
+incident-service → http://ai-service-api:8000
+
+No es necesario publicar todos los puertos al host.
+
+Puertos que probablemente sí deben exponerse:
+
+incident-service:
+8080:8080
+
+ai-service-api:
+8000:8000
+
+PostgreSQL:
+5432:5432 solo si se desea acceder desde herramientas locales
+
+Kafka:
+9092:9092 solo si se desea acceder desde aplicaciones fuera de Docker
+
+El consumer Python no necesita exponer un puerto.
+
+============================================================
+14. Health checks y orden de arranque
+============================================================
+
+depends_on no garantiza por sí mismo que una aplicación esté lista.
+
+Solo puede garantizar orden de creación, salvo que se combine con health checks y condiciones compatibles.
+
+Se recomienda agregar health checks para:
+
+- postgres
+- kafka
+- ai-service-api
+- incident-service
+
+Sin embargo, no hay que intentar resolver toda la resiliencia de arranque en el primer paso.
+
+Orden recomendado:
+
+1. Dockerfiles funcionales.
+2. Compose consolidado.
+3. Conectividad entre servicios.
+4. Variables de entorno.
+5. Health checks.
+6. Reinicios y refinamientos.
+
+Las aplicaciones también deberían tolerar que una dependencia tarde unos segundos en estar disponible.
+
+============================================================
+15. Checklist sugerido para Fase 4
+============================================================
+
+Fase 4 — Dockerization
+
+4.0 Revisar estado actual del repo y docker-compose existente ⬜
+
+4.1 Externalizar configuración hardcoded ⬜
+- Kafka Python.
+- Kafka Spring.
+- PostgreSQL.
+- URL de ai-service.
+- USE_LLM y API keys.
+
+4.2 Crear .dockerignore para incident-service ⬜
+
+4.3 Crear Dockerfile multi-stage para incident-service ⬜
+
+4.4 Construir y ejecutar solo incident-service en Docker ⬜
+
+4.5 Crear .dockerignore para ai-service ⬜
+
+4.6 Crear Dockerfile para ai-service ⬜
+
+4.7 Ejecutar ai-service-api desde la imagen ⬜
+
+4.8 Ejecutar ai-service-consumer desde la misma imagen ⬜
+
+4.9 Consolidar PostgreSQL, Kafka y aplicaciones en Compose ⬜
+
+4.10 Ajustar networking y service names ⬜
+
+4.11 Agregar variables de entorno y .env.example ⬜
+
+4.12 Agregar health checks mínimos ⬜
+
+4.13 Validar flujo HTTP dentro de Docker ⬜
+
+4.14 Validar flujo Kafka end-to-end dentro de Docker ⬜
+
+4.15 Documentar comandos de build/run/stop/logs ⬜
+
+4.16 Revisar imágenes, contenedores y secretos ⬜
+
+4.17 Commit de cierre de Fase 4 ⬜
+
+============================================================
+16. Prueba final esperada de Fase 4
+============================================================
+
+Comando:
+
+docker compose up --build
+
+Después:
+
+1. Crear incidente por HTTP.
+2. Solicitar análisis por Kafka.
+3. Verificar 202 Accepted.
+4. Confirmar consumo Python.
+5. Confirmar publicación incident.analyzed.
+6. Confirmar listener Java.
+7. Confirmar fila en incident_analyses.
+8. Probar también el endpoint HTTP síncrono si ai-service-api está activo.
+9. Detener todo con:
+
+docker compose down
+
+Opcionalmente:
+
+docker compose down -v
+
+solo cuando se quiera eliminar también los volúmenes y datos locales.
+
+============================================================
+17. Estado del Project Context revisado
+============================================================
+
+El archivo ai_incident_assistant_project_context.md sí conviene editarse.
+
+Está desactualizado en puntos importantes:
+
+- Indica Spring Boot 3, pero el proyecto usa Spring Boot 4.
+- Marca Kafka y Spring Kafka como planned, pero ya están implementados.
+- Describe ai-service como future, aunque ya existe y funciona.
+- Presenta Pydantic v2 como planned, aunque ya está en uso.
+- La Fase 3 describe incident.created, pero el flujo real usa:
+  - incident.analysis.requested
+  - incident.analyzed
+- No menciona que se conserva el flujo HTTP síncrono.
+- No refleja el endpoint:
+  POST /api/incidents/{id}/analysis-requests
+- No refleja el consumer y producer Python.
+- No refleja el listener Java.
+- No refleja la migración V4.
+- No refleja el uso de Spring Boot starter Kafka.
+- No refleja el problema/resolución de Jackson 3.
+- La estructura de paquetes indicada no coincide exactamente con:
+  com.example.incident_service
+- Testcontainers aparece como parte del stack actual, pero aún no se ha implementado de forma completa en el flujo Kafka.
+- Fase 4 sí debe seguir siendo Dockerización.
+- Las fases 5 y 6 deben redefinirse para evitar duplicar lo ya realizado.
+
+Conviene actualizar el Project Context al cerrar Fase 4, o antes de iniciar el nuevo chat si se usará como fuente principal de contexto.
+
+============================================================
+18. Evaluación de Fase 5 antes de nube
+============================================================
+
+La Fase 5 actual se llama:
+
+Kafka Event Streaming (Advanced)
+
+Gran parte de su objetivo base ya fue completado en Fase 3.1:
+
+- producer/consumer patterns;
+- comunicación asíncrona;
+- serialización JSON;
+- dos topics;
+- múltiples servicios;
+- persistencia del resultado.
+
+Por tanto, Fase 5 no debería repetir la integración Kafka.
+
+Debe redefinirse como:
+
+Fase 5 — Event-Driven Reliability
+
+Elementos potenciales:
+
+- idempotencia;
+- correlation_id;
+- lifecycle PENDING/PROCESSING/COMPLETED/FAILED;
+- retries;
+- dead-letter topic;
+- incident.analysis.failed;
+- acknowledgment y offsets;
+- delivery callbacks;
+- control de duplicados;
+- tests de integración Kafka;
+- creación explícita de topics;
+- schema evolution.
+
+¿Es necesaria completa antes de nube?
+
+No.
+
+No es necesario implementar antes del primer despliegue:
+
+- Schema Registry.
+- Avro.
+- Protobuf.
+- múltiples consumidores avanzados.
+- DLQ sofisticada.
+- outbox pattern completo.
+- procesamiento exactly-once.
+- Kafka UI en producción.
+
+Sí conviene implementar antes del despliegue público:
+
+- manejo básico de errores del consumer;
+- evitar que una excepción mate permanentemente el proceso;
+- logs claros con incidentId y eventId;
+- configuración por variables de entorno;
+- al menos una estrategia conocida para mensajes fallidos;
+- idempotencia mínima o, como mínimo, documentar el riesgo de duplicados;
+- creación explícita de topics o control de auto-create;
+- prueba end-to-end repetible.
+
+Recomendación:
+Hacer una Fase 5 reducida después de Dockerización, no toda la lista avanzada.
+
+============================================================
+19. Evaluación de Fase 6 antes de nube
+============================================================
+
+La Fase 6 actual incluye hardening y producción.
+
+No toda la fase es indispensable, pero una parte mínima sí debería realizarse antes de desplegar.
+
+Necesario antes de nube:
+
+- variables de entorno;
+- secretos fuera del repositorio;
+- health checks;
+- manejo de errores razonable;
+- validación de inputs;
+- logs estructurados o al menos consistentes;
+- endpoint de health;
+- configuración por ambiente;
+- timeouts;
+- no usar modo debug/reload;
+- documentación de ejecución;
+- Actuator básico en Spring Boot;
+- confirmar que las imágenes no contienen secretos;
+- revisar CORS solo si habrá frontend;
+- revisar exposición de puertos;
+- persistencia con volumen o servicio gestionado.
+
+Muy recomendable:
+
+- endpoint para consultar resultados/historial;
+- estado de solicitudes asíncronas;
+- métricas básicas;
+- correlation IDs;
+- integración test mínima;
+- manejo de cuota/errores del LLM.
+
+Puede posponerse para después del primer despliegue:
+
+- Prometheus y Grafana completos;
+- distributed tracing completo;
+- OpenTelemetry end-to-end;
+- dashboards elaborados;
+- sorting/filtering avanzado;
+- refactor total de DTOs;
+- observabilidad de nivel enterprise.
+
+Recomendación:
+Crear una Fase 6 mínima llamada:
+
+Cloud Readiness
+
+y dejar observabilidad avanzada para una fase posterior al primer despliegue.
+
+============================================================
+20. Ruta recomendada hacia nube
+============================================================
+
+Orden recomendado:
+
+Fase 4 — Dockerization
+
+Objetivo:
+Levantar todo el sistema localmente con Docker Compose.
+
+Después:
+
+Fase 5 — Reliability Minimum
+
+Implementar solo:
+- error handling básico;
+- idempotencia mínima o control de duplicados;
+- correlation/event IDs en logs;
+- retry limitado o failed topic;
+- configuración de topics;
+- prueba end-to-end estable.
+
+Después:
+
+Fase 6 — Cloud Readiness Minimum
+
+Implementar:
+- secrets/configuración;
+- health checks;
+- Actuator;
+- timeouts;
+- logs;
+- imagen de producción;
+- documentación;
+- configuración por ambiente.
+
+Después:
+
+Fase 7 — First Cloud Deployment
+
+No esperar a tener:
+- Grafana completo;
+- tracing distribuido completo;
+- schema registry;
+- Avro;
+- outbox;
+- arquitectura enterprise completa.
+
+El primer despliegue debe verse como un MVP técnico desplegado, no como una plataforma production-grade.
+
+============================================================
+21. Recomendación sobre GCP y Kafka
+============================================================
+
+El Project Context propone GCP como destino inicial.
+
+Antes de diseñar Fase 7 habrá que decidir cómo desplegar Kafka.
+
+Cloud Run no es el lugar natural para ejecutar un broker Kafka persistente.
+
+Opciones futuras:
+
+- usar un proveedor Kafka administrado;
+- usar Redpanda Cloud o Confluent Cloud;
+- desplegar Kafka en una VM solo con fines de aprendizaje;
+- sustituir temporalmente Kafka por Pub/Sub para una versión GCP-native;
+- elegir otra plataforma para el primer despliegue.
+
+No debe tomarse esta decisión durante Fase 4.
+
+Fase 4 debe producir imágenes portables y una configuración Compose funcional.
+
+============================================================
+22. Primer paso recomendado para el nuevo chat
+============================================================
+
+Comenzar con:
+
+4.0 Revisar el docker-compose.yml actual y la configuración hardcoded.
+
+Después:
+
+4.1 Externalizar configuración antes de crear Dockerfiles.
+
+Razón:
+
+Si se crean primero los Dockerfiles sin resolver localhost y variables de entorno, las imágenes compilarán, pero los contenedores no podrán comunicarse correctamente.
+
+Punto exacto para continuar:
+
+Fase 4, paso 4.0:
+Revisar el Compose actual, application.yml, configuración Python y requirements.
