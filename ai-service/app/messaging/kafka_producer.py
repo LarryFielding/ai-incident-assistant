@@ -1,16 +1,13 @@
 from confluent_kafka import Producer
 
+from app.core.config import settings
 from app.messaging.models import IncidentAnalyzedEvent
-
-
-KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
-INCIDENT_ANALYZED_TOPIC = "incident.analyzed"
 
 
 def create_producer() -> Producer:
     return Producer(
         {
-            "bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS,
+            "bootstrap.servers": settings.kafka_bootstrap_servers,
         }
     )
 
@@ -20,7 +17,7 @@ def publish_incident_analyzed(
     event: IncidentAnalyzedEvent,
 ) -> None:
     producer.produce(
-        topic=INCIDENT_ANALYZED_TOPIC,
+        topic=settings.incident_analyzed_topic,
         key=str(event.incident_id),
         value=event.model_dump_json(),
     )

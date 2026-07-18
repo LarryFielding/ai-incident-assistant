@@ -5,6 +5,7 @@ from pydantic import ValidationError
 from uuid import uuid4
 from datetime import datetime, timezone
 
+from app.core.config import settings
 from app.messaging.models import IncidentAnalysisRequestedEvent
 from app.messaging.kafka_producer import (
     create_producer,
@@ -16,10 +17,6 @@ from app.messaging.models import (
 )
 from app.models.requests import IncidentAnalysisRequest
 from app.services.incident_analysis_service import analyze_incident
-
-KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
-ANALYSIS_REQUESTED_TOPIC = "incident.analysis.requested"
-CONSUMER_GROUP_ID = "ai-service-analysis-consumer"
 
 
 def process_analysis_request(
@@ -54,8 +51,8 @@ def process_analysis_request(
 def create_consumer() -> Consumer:
     return Consumer(
         {
-            "bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS,
-            "group.id": CONSUMER_GROUP_ID,
+            "bootstrap.servers": settings.kafka_bootstrap_servers,
+            "group.id": settings.consumer_group_id,
             "auto.offset.reset": "earliest",
         }
     )
@@ -65,11 +62,11 @@ def consume_analysis_requests() -> None:
     consumer = create_consumer()
     producer = create_producer()
 
-    consumer.subscribe([ANALYSIS_REQUESTED_TOPIC])
+    consumer.subscribe([settings.analysis_requested_topic])
 
     print(
         f"Listening for Kafka events on "
-        f"{ANALYSIS_REQUESTED_TOPIC}..."
+        f"{settings.analysis_requested_topic}..."
     )
 
     try:

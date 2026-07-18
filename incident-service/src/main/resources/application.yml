@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/incidentdb
-    username: incident_user
-    password: incident_pass
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/incidentdb}
+    username: ${DB_USERNAME:incident_user}
+    password: ${DB_PASSWORD:incident_pass}
 
   flyway:
     enabled: true
@@ -17,14 +17,14 @@ spring:
         format_sql: true
 
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
 
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JacksonJsonSerializer
 
     consumer:
-      group-id: incident-service-analysis-consumer
+      group-id: ${KAFKA_CONSUMER_GROUP_ID:incident-service-analysis-consumer}
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
@@ -40,4 +40,4 @@ management:
         include: health,info
 
 ai-service:
-  base-url: http://localhost:8000
+  base-url: ${AI_SERVICE_BASE_URL:http://localhost:8000}
